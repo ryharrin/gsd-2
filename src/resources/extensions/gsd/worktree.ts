@@ -78,11 +78,10 @@ export function ensureSliceBranch(basePath: string, milestoneId: string, sliceId
 
   if (current === branch) return false;
 
-  const mainBranch = getMainBranch(basePath);
   let created = false;
 
   if (!branchExists(basePath, branch)) {
-    runGit(basePath, ["branch", branch, mainBranch]);
+    runGit(basePath, ["branch", branch]);
     created = true;
   }
 
