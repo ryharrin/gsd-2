@@ -38,18 +38,6 @@ type PicoModule = {
 
 const TOOL_KEYS: ToolKeyConfig[] = [
   {
-    provider: 'brave',
-    envVar: 'BRAVE_API_KEY',
-    label: 'Brave Search',
-    hint: 'web search + search_and_read tools',
-  },
-  {
-    provider: 'brave_answers',
-    envVar: 'BRAVE_ANSWERS_KEY',
-    label: 'Brave Answers',
-    hint: 'AI-summarised search answers',
-  },
-  {
     provider: 'context7',
     envVar: 'CONTEXT7_API_KEY',
     label: 'Context7',
@@ -207,6 +195,18 @@ export async function runOnboarding(authStorage: AuthStorage): Promise<void> {
     p.log.info('You can configure your LLM provider later with /login inside GSD.')
   }
 
+  // ── Web Search Provider ──────────────────────────────────────────────────
+  let searchConfigured: string | null = null
+  try {
+    searchConfigured = await runWebSearchStep(p, pc, authStorage, llmConfigured)
+  } catch (err) {
+    if (isCancelError(p, err)) {
+      p.cancel('Setup cancelled.')
+      return
+    }
+    p.log.warn(`Web search setup failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
   // ── Tool API Keys ─────────────────────────────────────────────────────────
   let toolKeyCount = 0
   try {
@@ -232,6 +232,12 @@ export async function runOnboarding(authStorage: AuthStorage): Promise<void> {
     }
   } else {
     summaryLines.push(`${pc.yellow('↷')} LLM provider: skipped — use /login inside GSD`)
+  }
+
+  if (searchConfigured) {
+    summaryLines.push(`${pc.green('✓')} Web search: ${searchConfigured}`)
+  } else {
+    summaryLines.push(`${pc.dim('↷')} Web search: not configured — use /search-provider inside GSD`)
   }
 
   if (toolKeyCount > 0) {
@@ -396,6 +402,77 @@ async function runApiKeyFlow(
   authStorage.set(providerId, { type: 'api_key', key: trimmed })
   p.log.success(`API key saved for ${pc.green(providerLabel)}`)
   return true
+}
+
+// ─── Web Search Provider Step ─────────────────────────────────────────────────
+
+async function runWebSearchStep(
+  p: ClackModule,
+  pc: PicoModule,
+  authStorage: AuthStorage,
+  isAnthropicAuth: boolean,
+): Promise<string | null> {
+  // Check which LLM provider was configured
+  const authed = authStorage.list().filter(id => LLM_PROVIDER_IDS.includes(id))
+  const isAnthropic = isAnthropicAuth && authed.includes('anthropic')
+
+  // Build options based on what's available
+  type SearchOption = { value: string; label: string; hint?: string }
+  const options: SearchOption[] = []
+
+  if (isAnthropic) {
+    options.push({
+      value: 'anthropic-native',
+      label: 'Anthropic built-in web search',
+      hint: 'no API key needed — already included with Claude',
+    })
+  }
+
+  options.push(
+    { value: 'brave', label: 'Brave Search', hint: 'requires API key — brave.com/search/api' },
+    { value: 'tavily', label: 'Tavily', hint: 'requires API key — tavily.com' },
+    { value: 'skip', label: 'Skip for now', hint: 'use /search-provider inside GSD later' },
+  )
+
+  const choice = await p.select({
+    message: 'How do you want to search the web?',
+    options,
+  })
+
+  if (p.isCancel(choice) || choice === 'skip') return null
+
+  if (choice === 'anthropic-native') {
+    p.log.success(`Web search: ${pc.green('Anthropic built-in')} — works out of the box`)
+    return 'Anthropic built-in'
+  }
+
+  if (choice === 'brave') {
+    const key = await p.password({
+      message: `Paste your Brave Search API key ${pc.dim('(brave.com/search/api)')}:`,
+      mask: '●',
+    })
+    if (p.isCancel(key) || !(key as string)?.trim()) return null
+    const trimmed = (key as string).trim()
+    authStorage.set('brave', { type: 'api_key', key: trimmed })
+    process.env.BRAVE_API_KEY = trimmed
+    p.log.success(`Web search: ${pc.green('Brave Search')} configured`)
+    return 'Brave Search'
+  }
+
+  if (choice === 'tavily') {
+    const key = await p.password({
+      message: `Paste your Tavily API key ${pc.dim('(tavily.com)')}:`,
+      mask: '●',
+    })
+    if (p.isCancel(key) || !(key as string)?.trim()) return null
+    const trimmed = (key as string).trim()
+    authStorage.set('tavily', { type: 'api_key', key: trimmed })
+    process.env.TAVILY_API_KEY = trimmed
+    p.log.success(`Web search: ${pc.green('Tavily')} configured`)
+    return 'Tavily'
+  }
+
+  return null
 }
 
 // ─── Tool API Keys Step ───────────────────────────────────────────────────────
