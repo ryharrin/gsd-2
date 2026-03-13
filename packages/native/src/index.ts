@@ -74,6 +74,13 @@ export {
 } from "./text/index.js";
 export type { SliceResult, ExtractSegmentsResult } from "./text/index.js";
 
+export {
+  normalizeForFuzzyMatch,
+  fuzzyFindText,
+  generateDiff,
+} from "./diff/index.js";
+export type { FuzzyMatchResult, DiffResult } from "./diff/index.js";
+
 export { fuzzyFind } from "./fd/index.js";
 export type {
   FuzzyFindMatch,

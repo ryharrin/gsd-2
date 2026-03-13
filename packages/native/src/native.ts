@@ -87,6 +87,9 @@ export const native = loadNative() as {
   sanitizeText: (text: string) => string;
   visibleWidth: (text: string, tabWidth?: number) => number;
   fuzzyFind: (options: unknown) => unknown;
+  normalizeForFuzzyMatch: (text: string) => string;
+  fuzzyFindText: (content: string, oldText: string) => unknown;
+  generateDiff: (oldContent: string, newContent: string, contextLines?: number) => unknown;
   NativeImage: unknown;
   ttsrCompileRules: (rules: unknown[]) => number;
   ttsrCheckBuffer: (handle: number, buffer: string) => string[];
