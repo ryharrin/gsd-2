@@ -53,6 +53,19 @@ export function isMilestoneComplete(roadmap: Roadmap): boolean {
   return roadmap.slices.length > 0 && roadmap.slices.every(s => s.done);
 }
 
+/**
+ * Check whether a VALIDATION file's verdict is terminal (pass or needs-attention).
+ * A non-terminal verdict (needs-remediation) means validation must re-run
+ * after remediation slices are executed.
+ */
+export function isValidationTerminal(validationContent: string): boolean {
+  const match = validationContent.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return false;
+  const verdict = match[1].match(/verdict:\s*(\S+)/);
+  if (!verdict) return false;
+  return verdict[1] === 'pass' || verdict[1] === 'needs-attention';
+}
+
 // ─── State Derivation ──────────────────────────────────────────────────────
 
 // ── deriveState memoization ─────────────────────────────────────────────────
@@ -279,10 +292,20 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     const complete = isMilestoneComplete(roadmap);
 
     if (complete) {
-      // All slices done — check if milestone summary exists
+      // All slices done — check validation and summary state
+      const validationFile = resolveMilestoneFile(basePath, mid, "VALIDATION");
+      const validationContent = validationFile ? await cachedLoadFile(validationFile) : null;
+      const validationTerminal = validationContent ? isValidationTerminal(validationContent) : false;
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (!summaryFile && !activeMilestoneFound) {
-        // All slices complete but no summary written yet → completing-milestone
+
+      if (!validationTerminal && !activeMilestoneFound) {
+        // No terminal validation yet → validating-milestone
+        activeMilestone = { id: mid, title };
+        activeRoadmap = roadmap;
+        activeMilestoneFound = true;
+        registry.push({ id: mid, title, status: 'active' });
+      } else if (!summaryFile && !activeMilestoneFound) {
+        // Validated but no summary written yet → completing-milestone
         activeMilestone = { id: mid, title };
         activeRoadmap = roadmap;
         activeMilestoneFound = true;
@@ -385,12 +408,34 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     };
   }
 
-  // Check if active milestone needs completion (all slices done, no summary)
+  // Check if active milestone needs validation or completion (all slices done)
   if (isMilestoneComplete(activeRoadmap)) {
+    const validationFile = resolveMilestoneFile(basePath, activeMilestone.id, "VALIDATION");
+    const validationContent = validationFile ? await cachedLoadFile(validationFile) : null;
+    const validationTerminal = validationContent ? isValidationTerminal(validationContent) : false;
     const sliceProgress = {
       done: activeRoadmap.slices.length,
       total: activeRoadmap.slices.length,
     };
+
+    if (!validationTerminal) {
+      return {
+        activeMilestone,
+        activeSlice: null,
+        activeTask: null,
+        phase: 'validating-milestone',
+        recentDecisions: [],
+        blockers: [],
+        nextAction: `Validate milestone ${activeMilestone.id} before completion.`,
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+          slices: sliceProgress,
+        },
+      };
+    }
+
     return {
       activeMilestone,
       activeSlice: null,

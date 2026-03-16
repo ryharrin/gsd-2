@@ -38,6 +38,12 @@ function writeMilestoneSummary(base: string, mid: string, content: string): void
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), content);
 }
 
+function writeMilestoneValidation(base: string, mid: string, verdict: string = 'pass'): void {
+  const dir = join(base, '.gsd', 'milestones', mid);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: ${verdict}\nremediation_round: 0\n---\n\n# Validation\nValidated.`);
+}
+
 function writeRequirements(base: string, content: string): void {
   writeFileSync(join(base, '.gsd', 'REQUIREMENTS.md'), content);
 }
@@ -285,6 +291,7 @@ Continue from step 2.
   > After this: Done.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nMilestone complete.`);
 
       const state = await deriveState(base);
@@ -381,6 +388,7 @@ Continue from step 2.
   > After this: Done.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nFirst milestone complete.`);
 
       // M002: active (has incomplete slices)
@@ -486,6 +494,8 @@ Continue from step 2.
   > After this: S02 complete.
 `);
 
+      writeMilestoneValidation(base, 'M001');
+
       const state = await deriveState(base);
 
       assertEq(state.phase, 'completing-milestone', 'completing-ms: phase is completing-milestone');
@@ -521,6 +531,7 @@ Continue from step 2.
   > After this: Done.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nMilestone is complete.`);
 
       const state = await deriveState(base);
@@ -550,6 +561,7 @@ Continue from step 2.
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nFirst milestone complete.`);
 
       // M002: all slices done, no summary → completing-milestone
@@ -565,6 +577,8 @@ Continue from step 2.
 - [x] **S02: Also Done** \`risk:low\` \`depends:[S01]\`
   > After this: Done.
 `);
+
+      writeMilestoneValidation(base, 'M002');
 
       // M003: has incomplete slices → pending (M002 is active)
       writeRoadmap(base, 'M003', `# M003: Third Milestone

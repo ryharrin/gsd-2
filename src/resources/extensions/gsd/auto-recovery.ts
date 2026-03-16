@@ -83,6 +83,10 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
       const dir = resolveSlicePath(base, mid, sid!);
       return dir ? join(dir, buildSliceFileName(sid!, "SUMMARY")) : null;
     }
+    case "validate-milestone": {
+      const dir = resolveMilestonePath(base, mid);
+      return dir ? join(dir, buildMilestoneFileName(mid, "VALIDATION")) : null;
+    }
     case "complete-milestone": {
       const dir = resolveMilestonePath(base, mid);
       return dir ? join(dir, buildMilestoneFileName(mid, "SUMMARY")) : null;
@@ -244,6 +248,8 @@ export function diagnoseExpectedArtifact(unitType: string, unitId: string, base:
       return `${relSliceFile(base, mid!, sid!, "ASSESSMENT")} (roadmap reassessment)`;
     case "run-uat":
       return `${relSliceFile(base, mid!, sid!, "UAT-RESULT")} (UAT result)`;
+    case "validate-milestone":
+      return `${relMilestoneFile(base, mid!, "VALIDATION")} (milestone validation report)`;
     case "complete-milestone":
       return `${relMilestoneFile(base, mid!, "SUMMARY")} (milestone summary)`;
     default:
@@ -535,6 +541,15 @@ export function buildLoopRemediationSteps(unitType: string, unitId: string, base
         `   2. Mark ${sid} [x] in ${relMilestoneFile(base, mid, "ROADMAP")}`,
         `   3. Run \`gsd doctor\` to reconcile .gsd/ state`,
         `   4. Resume auto-mode`,
+      ].join("\n");
+    }
+    case "validate-milestone": {
+      if (!mid) break;
+      const artifactRel = relMilestoneFile(base, mid, "VALIDATION");
+      return [
+        `   1. Write ${artifactRel} with verdict: pass`,
+        `   2. Run \`gsd doctor\``,
+        `   3. Resume auto-mode`,
       ].join("\n");
     }
     default:

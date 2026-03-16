@@ -1,6 +1,6 @@
 You are executing GSD auto-mode.
 
-## UNIT: Validate Milestone {{milestoneId}} ("{{milestoneTitle}}") — Remediation Round {{remediationRound}}
+## UNIT: Validate Milestone {{milestoneId}} ("{{milestoneTitle}}")
 
 ## Working Directory
 
@@ -8,84 +8,63 @@ Your working directory is `{{workingDirectory}}`. All file reads, writes, and sh
 
 ## Your Role in the Pipeline
 
-All slices are done. Before the **complete-milestone agent** closes this milestone, you reconcile planned work against what was actually delivered. You audit success criteria against evidence, inventory deferred work across all slice summaries and UAT results, and classify gaps. If auto-remediable gaps exist on the first pass, you append remediation slices to the roadmap so the pipeline can execute them before completion. After remediation slices run, you re-validate. The milestone only proceeds to completion once validation passes.
+All slices are done. Before the milestone can be completed, you must validate that the planned work was delivered as specified. Compare the roadmap's success criteria and slice definitions against the actual slice summaries and UAT results. This is a reconciliation gate — catch gaps, regressions, or missing deliverables before the milestone is sealed.
 
-This is a gate, not a formality. But most milestones pass — bias toward "pass" unless you find concrete evidence of unmet criteria or meaningful gaps.
+This is remediation round {{remediationRound}}. If this is round 0, this is the first validation pass. If > 0, prior validation found issues and remediation slices were added and executed — verify those remediation slices resolved the issues.
 
 All relevant context has been preloaded below — the roadmap, all slice summaries, UAT results, requirements, decisions, and project context are inlined. Start working immediately without re-reading these files.
 
 {{inlinedContext}}
 
-If a `GSD Skill Preferences` block is present in system context, use it to decide which skills to load and follow during validation, without relaxing required verification or artifact rules.
+## Validation Steps
 
-Then:
+1. For each **success criterion** in `{{roadmapPath}}`, check whether slice summaries and UAT results provide evidence that it was met. Record pass/fail per criterion.
+2. For each **slice** in the roadmap, verify its demo/deliverable claim against its summary. Flag any slice whose summary does not substantiate its claimed output.
+3. Check **cross-slice integration points** — do boundary map entries (produces/consumes) align with what was actually built?
+4. Check **requirement coverage** — are all active requirements addressed by at least one slice?
+5. Determine a verdict:
+   - `pass` — all criteria met, all slices delivered, no gaps
+   - `needs-attention` — minor gaps that do not block completion (document them)
+   - `needs-remediation` — material gaps found; add remediation slices to the roadmap
 
-### Step 1: Audit Success Criteria
+## Output
 
-Enumerate each success criterion from the roadmap's `## Success Criteria` section. For each criterion, map it to concrete evidence from slice summaries, UAT results, or observable behavior.
+Write `{{validationPath}}` with this structure:
 
-Format each criterion as:
+```markdown
+---
+verdict: <pass|needs-attention|needs-remediation>
+remediation_round: {{remediationRound}}
+---
 
-- `Criterion text` — **MET** — evidence: {{specific slice summary, UAT result, test output, or observable behavior}}
-- `Criterion text` — **NOT MET** — gap: {{what's missing and why}}
+# Milestone Validation: {{milestoneId}}
 
-Every criterion must have a definitive verdict. Do not mark a criterion as MET without specific evidence.
+## Success Criteria Checklist
+- [x] Criterion 1 — evidence: ...
+- [ ] Criterion 2 — gap: ...
 
-### Step 2: Inventory Deferred Work
+## Slice Delivery Audit
+| Slice | Claimed | Delivered | Status |
+|-------|---------|-----------|--------|
+| S01   | ...     | ...       | pass   |
 
-Scan ALL slice summaries for:
-- `Known Limitations` sections
-- `Follow-ups` sections
-- `Deviations` sections
+## Cross-Slice Integration
+(any boundary mismatches)
 
-Scan ALL UAT results for:
-- `Not Proven By This UAT` sections
-- Any PARTIAL or FAIL verdicts
+## Requirement Coverage
+(any unaddressed requirements)
 
-Check:
-- `.gsd/REQUIREMENTS.md` for Active requirements not yet Validated
-- `.gsd/CAPTURES.md` for unresolved deferred captures
+## Verdict Rationale
+(why this verdict was chosen)
 
-Collect every item into a single inventory. Do not skip items because they seem minor — the classification step handles prioritization.
+## Remediation Plan
+(only if verdict is needs-remediation — list new slices to add to the roadmap)
+```
 
-### Step 3: Classify Each Gap
-
-For every unmet criterion and every deferred work item, classify it as one of:
-
-- **auto-remediable** — can be fixed by adding a new slice (missing feature, unfixed bug, untested path, incomplete integration)
-- **human-required** — needs Lex's input (design decision, external service dependency, manual verification, judgment call, ambiguous requirement)
-- **acceptable** — known limitation that's OK to ship (documented trade-off, explicitly scoped for a future milestone, minor rough edge with no user impact)
-
-Be conservative with **auto-remediable**. Only classify a gap as auto-remediable if you're confident a slice can resolve it without human judgment. When in doubt, classify as **human-required**.
-
-### Step 4: Act on Gaps
-
-**If this is remediation round 0 AND auto-remediable gaps exist:**
-
-1. Define remediation slices to address auto-remediable gaps. Follow the exact roadmap slice format:
-   `- [ ] **S0X: Title** \`risk:medium\` \`depends:[]\``
-   Include a brief description of what each slice must accomplish.
-2. Append these slices to `{{roadmapPath}}` after existing slices (do not modify completed slices).
-3. Update the boundary map in the roadmap if the new slices introduce new integration points.
-4. Set verdict to `needs-remediation`.
-
-**If this is remediation round 1 or higher:**
-
-Do NOT add more slices. At this point either:
-- All remaining gaps are acceptable — set verdict to `pass`
-- Remaining gaps need Lex's input — set verdict to `needs-attention`
-
-Never add remediation slices after round 0. If round 0 remediation didn't close the gaps, escalate.
-
-**If no auto-remediable gaps exist (any round):**
-
-- If all criteria are MET and deferred items are acceptable or human-required only — set verdict to `pass` (with human-required items noted)
-- If human-required items are blocking — set verdict to `needs-attention`
-
-### Step 5: Write Validation Report
-
-Write `{{validationPath}}` using the milestone-validation template. Fill all frontmatter fields and every section. The report must be a complete record of the validation — a future agent reading only this file should understand what was checked, what passed, and what remains.
+If verdict is `needs-remediation`:
+- Add new slices to `{{roadmapPath}}` with unchecked `[ ]` status
+- These slices will be planned and executed before validation re-runs
 
 **You MUST write `{{validationPath}}` before finishing.**
 
-When done, say: "Milestone {{milestoneId}} validated."
+When done, say: "Milestone {{milestoneId}} validation complete — verdict: <verdict>."

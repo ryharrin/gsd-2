@@ -24,6 +24,7 @@ export type DoctorIssueCode =
   | "all_tasks_done_roadmap_not_checked"
   | "slice_checked_missing_summary"
   | "slice_checked_missing_uat"
+  | "all_slices_done_missing_milestone_validation"
   | "all_slices_done_missing_milestone_summary"
   | "task_done_must_haves_not_verified"
   | "active_requirement_missing_owner"
@@ -1253,6 +1254,19 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
           fixable: true,
         });
       }
+    }
+
+    // Milestone-level check: all slices done but no validation file
+    if (isMilestoneComplete(roadmap) && !resolveMilestoneFile(basePath, milestoneId, "VALIDATION") && !resolveMilestoneFile(basePath, milestoneId, "SUMMARY")) {
+      issues.push({
+        severity: "info",
+        code: "all_slices_done_missing_milestone_validation",
+        scope: "milestone",
+        unitId: milestoneId,
+        message: `All slices are done but ${milestoneId}-VALIDATION.md is missing — milestone is in validating-milestone phase`,
+        file: relMilestoneFile(basePath, milestoneId, "VALIDATION"),
+        fixable: false,
+      });
     }
 
     // Milestone-level check: all slices done but no milestone summary

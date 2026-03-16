@@ -310,6 +310,7 @@ async function main(): Promise<void> {
       mkdirSync(join(base, '.gsd', 'milestones', 'M001'), { recursive: true });
       mkdirSync(join(base, '.gsd', 'milestones', 'M002'), { recursive: true });
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', completedRoadmap);
+      writeFile(base, 'milestones/M001/M001-VALIDATION.md', `---\nverdict: pass\nremediation_round: 0\n---\n\n# Validation\nPassed.`);
       writeFile(base, 'milestones/M001/M001-SUMMARY.md', summaryContent);
       writeFile(base, 'milestones/M002/M002-ROADMAP.md', activeRoadmap);
 

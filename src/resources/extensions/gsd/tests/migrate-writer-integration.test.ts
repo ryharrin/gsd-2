@@ -263,12 +263,12 @@ async function main(): Promise<void> {
       // No REQUIREMENTS.md since empty requirements
       assertTrue(!existsSync(join(base, '.gsd', 'REQUIREMENTS.md')), 'complete: REQUIREMENTS.md NOT written (empty)');
 
-      // deriveState: all slices done, all tasks done — needs milestone summary for 'complete'
-      // Without milestone summary, it should be 'completing-milestone' or 'summarizing'
+      // deriveState: all slices done, all tasks done — needs validation then milestone summary
+      // Without VALIDATION file, it should be 'validating-milestone'
       const state = await deriveState(base);
-      // All slices are done in roadmap. Milestone summary doesn't exist.
-      // deriveState should return 'completing-milestone' since all slices done but no milestone summary.
-      assertEq(state.phase, 'completing-milestone', 'complete: deriveState phase is completing-milestone');
+      // All slices are done in roadmap. No VALIDATION or SUMMARY exists.
+      // deriveState should return 'validating-milestone' since validation gate precedes completion.
+      assertEq(state.phase, 'validating-milestone', 'complete: deriveState phase is validating-milestone');
       assertTrue(state.activeMilestone !== null, 'complete: deriveState has activeMilestone');
       assertEq(state.activeMilestone!.id, 'M001', 'complete: deriveState activeMilestone is M001');
 

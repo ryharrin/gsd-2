@@ -26,6 +26,12 @@ function writeMilestoneSummary(base: string, mid: string, content: string): void
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), content);
 }
 
+function writeMilestoneValidation(base: string, mid: string): void {
+  const dir = join(base, '.gsd', 'milestones', mid);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: pass\nremediation_round: 0\n---\n\n# Validation\nPassed.`);
+}
+
 /**
  * Creates M00x-CONTEXT.md with a valid YAML frontmatter block.
  * frontmatter is the raw YAML lines between the --- delimiters.
@@ -120,6 +126,7 @@ async function main(): Promise<void> {
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', '# M001 Summary\n\nFirst milestone is complete.');
 
       // M002: depends on M001, now unblocked
@@ -252,6 +259,7 @@ async function main(): Promise<void> {
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M002');
       writeMilestoneSummary(base, 'M002', '# M002 Summary\n\nSecond milestone is complete.');
 
       const state = await deriveState(base);
@@ -321,6 +329,7 @@ async function main(): Promise<void> {
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M004-0zjrg0');
       writeMilestoneSummary(base, 'M004-0zjrg0', '# M004-0zjrg0 Summary\n\nComplete.');
 
       // M005-b0m2hl: depends on M004-0zjrg0 (lowercase hex suffix)

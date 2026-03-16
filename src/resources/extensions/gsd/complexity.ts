@@ -87,6 +87,7 @@ const UNIT_TYPE_TIERS: Record<string, ComplexityTier> = {
   "execute-task": "standard",
   "replan-slice": "heavy",
   "reassess-roadmap": "heavy",
+  "validate-milestone": "heavy",
   "complete-milestone": "standard",
 };
 

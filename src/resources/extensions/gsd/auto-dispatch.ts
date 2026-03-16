@@ -14,9 +14,11 @@ import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
 import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
 import {
-  resolveMilestoneFile, resolveSliceFile,
-  relSliceFile,
+  resolveMilestoneFile, resolveMilestonePath, resolveSliceFile,
+  relSliceFile, buildMilestoneFileName,
 } from "./paths.js";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildResearchMilestonePrompt,
   buildPlanMilestonePrompt,
@@ -25,6 +27,7 @@ import {
   buildExecuteTaskPrompt,
   buildCompleteSlicePrompt,
   buildCompleteMilestonePrompt,
+  buildValidateMilestonePrompt,
   buildReplanSlicePrompt,
   buildRunUatPrompt,
   buildReassessRoadmapPrompt,
@@ -251,6 +254,38 @@ const DISPATCH_RULES: DispatchRule[] = [
         unitType: "execute-task",
         unitId: `${mid}/${sid}/${tid}`,
         prompt: await buildExecuteTaskPrompt(mid, sid, sTitle, tid, tTitle, basePath),
+      };
+    },
+  },
+  {
+    name: "validating-milestone → validate-milestone",
+    match: async ({ state, mid, midTitle, basePath, prefs }) => {
+      if (state.phase !== "validating-milestone") return null;
+      // Skip preference: write a minimal pass-through VALIDATION file
+      if (prefs?.phases?.skip_milestone_validation) {
+        const mDir = resolveMilestonePath(basePath, mid);
+        if (mDir) {
+          if (!existsSync(mDir)) mkdirSync(mDir, { recursive: true });
+          const validationPath = join(mDir, buildMilestoneFileName(mid, "VALIDATION"));
+          const content = [
+            "---",
+            "verdict: pass",
+            "remediation_round: 0",
+            "---",
+            "",
+            "# Milestone Validation (skipped by preference)",
+            "",
+            "Milestone validation was skipped via `skip_milestone_validation` preference.",
+          ].join("\n");
+          writeFileSync(validationPath, content, "utf-8");
+        }
+        return { action: "skip" };
+      }
+      return {
+        action: "dispatch",
+        unitType: "validate-milestone",
+        unitId: mid,
+        prompt: await buildValidateMilestonePrompt(mid, midTitle, basePath),
       };
     },
   },

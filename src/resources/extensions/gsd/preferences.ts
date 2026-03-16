@@ -688,6 +688,7 @@ export function resolveProfileDefaults(profile: TokenProfile): Partial<GSDPrefer
           skip_research: true,
           skip_reassess: true,
           skip_slice_research: true,
+          skip_milestone_validation: true,
         },
       };
     case "balanced":
@@ -909,8 +910,9 @@ export function validatePreferences(preferences: GSDPreferences): {
       if (p.skip_research !== undefined) validatedPhases.skip_research = !!p.skip_research;
       if (p.skip_reassess !== undefined) validatedPhases.skip_reassess = !!p.skip_reassess;
       if (p.skip_slice_research !== undefined) validatedPhases.skip_slice_research = !!p.skip_slice_research;
+      if (p.skip_milestone_validation !== undefined) validatedPhases.skip_milestone_validation = !!p.skip_milestone_validation;
       // Warn on unknown phase keys
-      const knownPhaseKeys = new Set(["skip_research", "skip_reassess", "skip_slice_research"]);
+      const knownPhaseKeys = new Set(["skip_research", "skip_reassess", "skip_slice_research", "skip_milestone_validation"]);
       for (const key of Object.keys(p)) {
         if (!knownPhaseKeys.has(key)) {
           warnings.push(`unknown phases key "${key}" — ignored`);

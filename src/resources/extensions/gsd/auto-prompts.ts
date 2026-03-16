@@ -855,6 +855,79 @@ export async function buildCompleteMilestonePrompt(
   });
 }
 
+export async function buildValidateMilestonePrompt(
+  mid: string, midTitle: string, base: string, level?: InlineLevel,
+): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
+  const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
+  const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
+
+  const inlined: string[] = [];
+  inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
+
+  // Inline all slice summaries and UAT results
+  const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+  if (roadmapContent) {
+    const roadmap = parseRoadmap(roadmapContent);
+    const seenSlices = new Set<string>();
+    for (const slice of roadmap.slices) {
+      if (seenSlices.has(slice.id)) continue;
+      seenSlices.add(slice.id);
+      const summaryPath = resolveSliceFile(base, mid, slice.id, "SUMMARY");
+      const summaryRel = relSliceFile(base, mid, slice.id, "SUMMARY");
+      inlined.push(await inlineFile(summaryPath, summaryRel, `${slice.id} Summary`));
+
+      const uatPath = resolveSliceFile(base, mid, slice.id, "UAT-RESULT");
+      const uatRel = relSliceFile(base, mid, slice.id, "UAT-RESULT");
+      const uatInline = await inlineFileOptional(uatPath, uatRel, `${slice.id} UAT Result`);
+      if (uatInline) inlined.push(uatInline);
+    }
+  }
+
+  // Inline existing VALIDATION file if this is a re-validation round
+  const validationPath = resolveMilestoneFile(base, mid, "VALIDATION");
+  const validationRel = relMilestoneFile(base, mid, "VALIDATION");
+  const validationContent = validationPath ? await loadFile(validationPath) : null;
+  let remediationRound = 0;
+  if (validationContent) {
+    const roundMatch = validationContent.match(/remediation_round:\s*(\d+)/);
+    remediationRound = roundMatch ? parseInt(roundMatch[1], 10) + 1 : 1;
+    inlined.push(`### Previous Validation (re-validation round ${remediationRound})\nSource: \`${validationRel}\`\n\n${validationContent.trim()}`);
+  }
+
+  // Inline root GSD files
+  if (inlineLevel !== "minimal") {
+    const requirementsInline = await inlineRequirementsFromDb(base);
+    if (requirementsInline) inlined.push(requirementsInline);
+    const decisionsInline = await inlineDecisionsFromDb(base, mid);
+    if (decisionsInline) inlined.push(decisionsInline);
+    const projectInline = await inlineProjectFromDb(base);
+    if (projectInline) inlined.push(projectInline);
+  }
+  const knowledgeInline = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
+  if (knowledgeInline) inlined.push(knowledgeInline);
+  // Inline milestone context file
+  const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
+  const contextRel = relMilestoneFile(base, mid, "CONTEXT");
+  const contextInline = await inlineFileOptional(contextPath, contextRel, "Milestone Context");
+  if (contextInline) inlined.push(contextInline);
+
+  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+
+  const validationOutputPath = join(base, `${relMilestonePath(base, mid)}/${mid}-VALIDATION.md`);
+  const roadmapOutputPath = `${relMilestonePath(base, mid)}/${mid}-ROADMAP.md`;
+
+  return loadPrompt("validate-milestone", {
+    workingDirectory: base,
+    milestoneId: mid,
+    milestoneTitle: midTitle,
+    roadmapPath: roadmapOutputPath,
+    inlinedContext,
+    validationPath: validationOutputPath,
+    remediationRound: String(remediationRound),
+  });
+}
+
 export async function buildReplanSlicePrompt(
   mid: string, midTitle: string, sid: string, sTitle: string, base: string,
 ): Promise<string> {

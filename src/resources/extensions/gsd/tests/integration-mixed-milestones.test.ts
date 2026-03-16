@@ -51,6 +51,12 @@ function writeMilestoneSummary(base: string, mid: string, content: string): void
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), content);
 }
 
+function writeMilestoneValidation(base: string, mid: string): void {
+  const dir = join(base, '.gsd', 'milestones', mid);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: pass\nremediation_round: 0\n---\n\n# Validation\nPassed.`);
+}
+
 function cleanup(base: string): void {
   rmSync(base, { recursive: true, force: true });
 }
@@ -166,6 +172,7 @@ async function main(): Promise<void> {
   Did it.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001: Legacy Feature Summary
 
 **One-liner summary**
@@ -265,6 +272,7 @@ Everything worked.
   Did it.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001: Legacy Feature Summary
 
 **One-liner summary**
