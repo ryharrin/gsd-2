@@ -320,3 +320,48 @@ test("verifyExpectedArtifact detects roadmap [x] change despite parse cache", ()
     cleanup(base);
   }
 });
+
+test("verifyExpectedArtifact returns false for plan-slice with no parsed tasks", () => {
+  const base = makeTmpBase();
+  try {
+    const planPath = join(base, ".gsd", "milestones", "M001", "slices", "S01", "S01-PLAN.md");
+    writeFileSync(planPath, [
+      "# S01: Test Slice",
+      "",
+      "**Goal:** Leave planning incomplete.",
+      "**Demo:** Not ready.",
+      "",
+      "## Tasks",
+      "",
+      "_No tasks yet._",
+    ].join("\n"));
+
+    const verified = verifyExpectedArtifact("plan-slice", "M001/S01", base);
+    assert.equal(verified, false);
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact returns true for plan-slice with at least one task", () => {
+  const base = makeTmpBase();
+  try {
+    const planPath = join(base, ".gsd", "milestones", "M001", "slices", "S01", "S01-PLAN.md");
+    writeFileSync(planPath, [
+      "# S01: Test Slice",
+      "",
+      "**Goal:** Move into execution.",
+      "**Demo:** One task exists.",
+      "",
+      "## Tasks",
+      "",
+      "- [ ] **T01: First task** `est:10m`",
+      "  Implement the first step.",
+    ].join("\n"));
+
+    const verified = verifyExpectedArtifact("plan-slice", "M001/S01", base);
+    assert.equal(verified, true);
+  } finally {
+    cleanup(base);
+  }
+});

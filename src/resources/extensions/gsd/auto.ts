@@ -1830,6 +1830,76 @@ const MAX_SKIP_DEPTH = 20;
  *  allowed via _skipDepth > 0. */
 let _dispatching = false;
 
+async function stopForHardLifetimeLoop(
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  unitType: string,
+  unitId: string,
+  basePath: string,
+  lifetimeCount: number,
+): Promise<void> {
+  if (currentUnit) {
+    const modelId = ctx.model?.id ?? "unknown";
+    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, {
+      promptCharCount: lastPromptCharCount,
+      baselineCharCount: lastBaselineCharCount,
+      ...(currentUnitRouting ?? {}),
+    });
+  }
+  saveActivityLog(ctx, basePath, unitType, unitId);
+  const expected = diagnoseExpectedArtifact(unitType, unitId, basePath);
+  await stopAuto(ctx, pi);
+  ctx.ui.notify(
+    `Hard loop detected: ${unitType} ${unitId} dispatched ${lifetimeCount} times total (across reconciliation cycles). Stopping.${expected ? `\n   Expected artifact: ${expected}` : ""}\n   This may indicate deriveState() keeps returning the same unit despite artifacts existing.\n   Check .gsd/completed-units.json and the slice plan checkbox state.`,
+    "error",
+  );
+}
+
+async function advancePastVerifiedSkip(
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  unitType: string,
+  unitId: string,
+  basePath: string,
+  message: string,
+  options?: {
+    level?: "info" | "warning";
+    delayMs?: number;
+    persistCompletionKey?: boolean;
+    resetDispatchCount?: boolean;
+  },
+): Promise<void> {
+  const dispatchKey = `${unitType}/${unitId}`;
+  if (options?.persistCompletionKey) {
+    persistCompletedKey(basePath, dispatchKey);
+    completedKeySet.add(dispatchKey);
+  }
+  if (options?.resetDispatchCount) {
+    unitDispatchCount.delete(dispatchKey);
+  }
+  invalidateStateCache();
+  const lifetimeCount = (unitLifetimeDispatches.get(dispatchKey) ?? 0) + 1;
+  unitLifetimeDispatches.set(dispatchKey, lifetimeCount);
+  if (lifetimeCount > MAX_LIFETIME_DISPATCHES) {
+    await stopForHardLifetimeLoop(ctx, pi, unitType, unitId, basePath, lifetimeCount);
+    return;
+  }
+
+  ctx.ui.notify(message, options?.level ?? "info");
+  _skipDepth++;
+  try {
+    const delayMs = options?.delayMs ?? 50;
+    if (delayMs > 0) {
+      await new Promise(r => setTimeout(r, delayMs));
+    } else {
+      await new Promise(r => setImmediate(r));
+    }
+    await dispatchNextUnit(ctx, pi);
+  } finally {
+    _skipDepth = Math.max(0, _skipDepth - 1);
+  }
+}
+
 async function dispatchNextUnit(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
@@ -2286,14 +2356,14 @@ async function dispatchNextUnit(
     // Cross-validate: does the expected artifact actually exist?
     const artifactExists = verifyExpectedArtifact(unitType, unitId, basePath);
     if (artifactExists) {
-      ctx.ui.notify(
+      await advancePastVerifiedSkip(
+        ctx,
+        pi,
+        unitType,
+        unitId,
+        basePath,
         `Skipping ${unitType} ${unitId} — already completed in a prior session. Advancing.`,
-        "info",
       );
-      _skipDepth++;
-      await new Promise(r => setTimeout(r, 50));
-      await dispatchNextUnit(ctx, pi);
-      _skipDepth = Math.max(0, _skipDepth - 1);
       return;
     } else {
       // Stale completion record — artifact missing. Remove and re-run.
@@ -2312,17 +2382,15 @@ async function dispatchNextUnit(
   // completes successfully but the completion key was never written (e.g., completed
   // on the first attempt before hitting the retry-threshold persistence logic).
   if (verifyExpectedArtifact(unitType, unitId, basePath)) {
-    persistCompletedKey(basePath, idempotencyKey);
-    completedKeySet.add(idempotencyKey);
-    invalidateStateCache();
-    ctx.ui.notify(
+    await advancePastVerifiedSkip(
+      ctx,
+      pi,
+      unitType,
+      unitId,
+      basePath,
       `Skipping ${unitType} ${unitId} — artifact exists but completion key was missing. Repaired and advancing.`,
-      "info",
+      { persistCompletionKey: true },
     );
-    _skipDepth++;
-    await new Promise(r => setTimeout(r, 50));
-    await dispatchNextUnit(ctx, pi);
-    _skipDepth = Math.max(0, _skipDepth - 1);
     return;
   }
 
@@ -2345,17 +2413,7 @@ async function dispatchNextUnit(
   const lifetimeCount = (unitLifetimeDispatches.get(dispatchKey) ?? 0) + 1;
   unitLifetimeDispatches.set(dispatchKey, lifetimeCount);
   if (lifetimeCount > MAX_LIFETIME_DISPATCHES) {
-    if (currentUnit) {
-      const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount, ...(currentUnitRouting ?? {}) });
-    }
-    saveActivityLog(ctx, basePath, unitType, unitId);
-    const expected = diagnoseExpectedArtifact(unitType, unitId, basePath);
-    await stopAuto(ctx, pi);
-    ctx.ui.notify(
-      `Hard loop detected: ${unitType} ${unitId} dispatched ${lifetimeCount} times total (across reconciliation cycles). Stopping.${expected ? `\n   Expected artifact: ${expected}` : ""}\n   This may indicate deriveState() keeps returning the same unit despite artifacts existing.\n   Check .gsd/completed-units.json and the slice plan checkbox state.`,
-      "error",
-    );
+    await stopForHardLifetimeLoop(ctx, pi, unitType, unitId, basePath, lifetimeCount);
     return;
   }
   if (prevCount >= MAX_UNIT_DISPATCHES) {
@@ -2378,19 +2436,20 @@ async function dispatchNextUnit(
           // verifyExpectedArtifact: confirms physical artifacts (summary + [x]) now exist on disk.
           // Both must pass before we clear the dispatch counter and advance.
           if (reconciled && verifyExpectedArtifact(unitType, unitId, basePath)) {
-            ctx.ui.notify(
+            await advancePastVerifiedSkip(
+              ctx,
+              pi,
+              unitType,
+              unitId,
+              basePath,
               `Loop recovery: ${unitId} reconciled after ${prevCount + 1} dispatches — blocker artifacts written, pipeline advancing.\n   Review ${status.summaryPath} and replace the placeholder with real work.`,
-              "warning",
+              {
+                level: "warning",
+                delayMs: 0,
+                persistCompletionKey: true,
+                resetDispatchCount: true,
+              },
             );
-            // Persist completion so idempotency check prevents re-dispatch
-            // if deriveState keeps returning this unit (#462).
-            const reconciledKey = `${unitType}/${unitId}`;
-            persistCompletedKey(basePath, reconciledKey);
-            completedKeySet.add(reconciledKey);
-            unitDispatchCount.delete(dispatchKey);
-            invalidateStateCache();
-            await new Promise(r => setImmediate(r));
-            await dispatchNextUnit(ctx, pi);
             return;
           }
         }
@@ -2406,18 +2465,15 @@ async function dispatchNextUnit(
     // verifies disk state. Without this, a successful final attempt is
     // indistinguishable from a failed one.
     if (verifyExpectedArtifact(unitType, unitId, basePath)) {
-      ctx.ui.notify(
+      await advancePastVerifiedSkip(
+        ctx,
+        pi,
+        unitType,
+        unitId,
+        basePath,
         `Loop recovery: ${unitType} ${unitId} — artifact verified after ${prevCount + 1} dispatches. Advancing.`,
-        "info",
+        { delayMs: 0, persistCompletionKey: true, resetDispatchCount: true },
       );
-      // Persist completion so the idempotency check prevents re-dispatch
-      // if deriveState keeps returning this unit (see #462).
-      persistCompletedKey(basePath, dispatchKey);
-      completedKeySet.add(dispatchKey);
-      unitDispatchCount.delete(dispatchKey);
-      invalidateStateCache();
-      await new Promise(r => setImmediate(r));
-      await dispatchNextUnit(ctx, pi);
       return;
     }
 
@@ -2431,13 +2487,20 @@ async function dispatchNextUnit(
           const stubPath = join(mPath, `${unitId}-SUMMARY.md`);
           if (!existsSync(stubPath)) {
             writeFileSync(stubPath, `# ${unitId} Summary\n\nAuto-generated stub — milestone tasks completed but summary generation failed after ${prevCount + 1} attempts.\nReview and replace this stub with a proper summary.\n`);
-            ctx.ui.notify(`Generated stub summary for ${unitId} to unblock pipeline. Review later.`, "warning");
-            persistCompletedKey(basePath, dispatchKey);
-            completedKeySet.add(dispatchKey);
-            unitDispatchCount.delete(dispatchKey);
-            invalidateStateCache();
-            await new Promise(r => setImmediate(r));
-            await dispatchNextUnit(ctx, pi);
+            await advancePastVerifiedSkip(
+              ctx,
+              pi,
+              unitType,
+              unitId,
+              basePath,
+              `Generated stub summary for ${unitId} to unblock pipeline. Review later.`,
+              {
+                level: "warning",
+                delayMs: 0,
+                persistCompletionKey: true,
+                resetDispatchCount: true,
+              },
+            );
             return;
           }
         }
@@ -2467,18 +2530,20 @@ async function dispatchNextUnit(
           // repaired: skipExecuteTask updated metadata (returned early-true even if regex missed).
           // verifyExpectedArtifact: confirms the physical artifact (summary + [x]) now exists.
           if (repaired && verifyExpectedArtifact(unitType, unitId, basePath)) {
-            ctx.ui.notify(
+            await advancePastVerifiedSkip(
+              ctx,
+              pi,
+              unitType,
+              unitId,
+              basePath,
               `Self-repaired ${unitId}: summary existed but checkbox was unmarked. Marked [x] and advancing.`,
-              "warning",
+              {
+                level: "warning",
+                delayMs: 0,
+                persistCompletionKey: true,
+                resetDispatchCount: true,
+              },
             );
-            // Persist completion so idempotency check prevents re-dispatch (#462).
-            const repairedKey = `${unitType}/${unitId}`;
-            persistCompletedKey(basePath, repairedKey);
-            completedKeySet.add(repairedKey);
-            unitDispatchCount.delete(dispatchKey);
-            invalidateStateCache();
-            await new Promise(r => setImmediate(r));
-            await dispatchNextUnit(ctx, pi);
             return;
           }
         } else if (prevCount >= STUB_RECOVERY_THRESHOLD && !status.summaryExists) {

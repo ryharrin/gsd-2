@@ -11,7 +11,7 @@ import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import {
   clearUnitRuntimeRecord,
 } from "./unit-runtime.js";
-import { clearParseCache } from "./files.js";
+import { clearParseCache, parsePlan, parseRoadmap } from "./files.js";
 import {
   nativeConflictFiles,
   nativeCommit,
@@ -36,7 +36,6 @@ import {
   clearPathCache,
   resolveGsdRootFile,
 } from "./paths.js";
-import { parseRoadmap } from "./files.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -129,6 +128,19 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
   // — treat as stale completion state so the key gets evicted (#313).
   if (!absPath) return unitType === "replan-slice";
   if (!existsSync(absPath)) return false;
+
+  // plan-slice must contain at least one parsed task. A bare PLAN file with no
+  // executable tasks leaves deriveState() in planning, so treating file
+  // existence alone as completion can create verified-skip loops (#728).
+  if (unitType === "plan-slice") {
+    try {
+      const planContent = readFileSync(absPath, "utf-8");
+      const plan = parsePlan(planContent);
+      if (plan.tasks.length === 0) return false;
+    } catch {
+      return false;
+    }
+  }
 
   // execute-task must also have its checkbox marked [x] in the slice plan
   if (unitType === "execute-task") {
